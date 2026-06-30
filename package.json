@@ -1,0 +1,72 @@
+{
+  "name": "@joekd20/leash",
+  "version": "0.1.0",
+  "description": "A runtime safety layer for AI agents: wrap tool calls with allow/deny policies, resource limits, full execution traces, and hard-stops — so an autonomous agent can't rm -rf, exfiltrate, or burn your budget.",
+  "keywords": [
+    "ai",
+    "agent",
+    "llm",
+    "safety",
+    "guardrails",
+    "policy",
+    "tool-use",
+    "firewall",
+    "observability",
+    "anthropic",
+    "vercel-ai-sdk"
+  ],
+  "license": "MIT",
+  "author": "Joe Kane <joe@joekane.org> (https://joekane.org)",
+  "homepage": "https://github.com/TheJoeKD20/leash#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TheJoeKD20/leash.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TheJoeKD20/leash/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "leash": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "example": "tsx examples/runaway-agent.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "picomatch": "^4.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/picomatch": "^3.0.1",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.6"
+  }
+}

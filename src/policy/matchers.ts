@@ -1,0 +1,188 @@
+/**
+ * Matching primitives used by the policy engine: tool-name matching,
+ * path-glob matching, URL-host matching, and per-argument matchers.
+ */
+import picomatch from "picomatch";
+import type { ArgMatcher, NameMatcher, ToolCall } from "./types.js";
+
+/** Compile a glob (or array of globs) into a fast tester, with a cache. */
+const globCache = new Map<string, (s: string) => boolean>();
+
+function compileGlob(pattern: string | string[]): (s: string) => boolean {
+  // JSON.stringify disambiguates a string from a single-element array and
+  // arrays that would otherwise collapse to the same text (e.g. `["a b"]` vs
+  // `["a","b"]`) — a plain `join(" ")` would alias distinct picomatch inputs
+  // to one compiled tester and silently match the wrong paths.
+  const key = JSON.stringify(pattern);
+  let fn = globCache.get(key);
+  if (!fn) {
+    // `dot: true` so dotfiles/dot-paths match like an operator expects.
+    fn = picomatch(pattern, { dot: true });
+    globCache.set(key, fn);
+  }
+  return fn;
+}
+
+/** Does a tool name match the given {@link NameMatcher}? */
+export function matchName(name: string, matcher: NameMatcher): boolean {
+  if (Array.isArray(matcher)) {
+    return matcher.some((m) => matchName(name, m));
+  }
+  if (matcher instanceof RegExp) {
+    return matcher.test(name);
+  }
+  // Treat plain strings as globs; an exact name is just a glob with no
+  // wildcards, so this also covers exact-match.
+  return compileGlob(matcher)(name);
+}
+
+/**
+ * Match a path-like value against a glob. The value is lexically normalized
+ * first — `.`/`..` segments are resolved and duplicate/leading slashes are
+ * collapsed — so an agent can't dodge a path rule with cosmetic tricks like
+ * `src/../secrets/key` or `//etc/passwd`. Normalization is purely textual (no
+ * filesystem access, no symlink resolution); the caller remains responsible
+ * for canonicalizing against a real root if it needs symlink safety.
+ */
+export function matchPath(value: string, pattern: string | string[]): boolean {
+  return compileGlob(pattern)(normalizePath(value));
+}
+
+/**
+ * Lexically normalize a path: unify separators, collapse empty/`.` segments
+ * (so `//` and `./` disappear), and resolve `..` against earlier segments.
+ * Absolute paths keep their leading `/`; `..` that escapes a relative path is
+ * preserved as a leading `../` so escape attempts remain visible to policy.
+ */
+export function normalizePath(p: string): string {
+  const input = p.trim().replace(/\\/g, "/");
+  const isAbsolute = input.startsWith("/");
+  const out: string[] = [];
+  for (const seg of input.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") {
+      const top = out[out.length - 1];
+      if (out.length && top !== "..") out.pop();
+      else if (!isAbsolute) out.push("..");
+      // For absolute paths, `..` above the root is simply dropped.
+      continue;
+    }
+    out.push(seg);
+  }
+  const joined = out.join("/");
+  return isAbsolute ? "/" + joined : joined || ".";
+}
+
+/**
+ * Parse a string into a hostname, or return `undefined` if it isn't a URL.
+ * Accepts bare authorities like `api.github.com/foo` by trying an `https://`
+ * prefix as a fallback. A trailing FQDN dot is stripped so `api.github.com.`
+ * can't evade an `api.github.com` policy.
+ */
+export function extractHost(value: string): string | undefined {
+  const tryParse = (s: string): string | undefined => {
+    try {
+      const host = new URL(s).hostname;
+      return host ? host.replace(/\.$/, "") : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  return tryParse(value) ?? tryParse(`https://${value}`);
+}
+
+/**
+ * Match a URL host against a host pattern. The pattern may be an exact host
+ * (`"api.github.com"`) or a wildcard (`"*.github.com"`). A bare apex pattern
+ * does *not* implicitly match subdomains — be explicit with `*.`.
+ */
+export function matchHost(host: string, pattern: string | string[]): boolean {
+  const patterns = Array.isArray(pattern) ? pattern : [pattern];
+  const h = host.toLowerCase().replace(/\.$/, "");
+  return patterns.some((p) => {
+    const pat = p.toLowerCase().replace(/\.$/, "");
+    if (pat === h) return true;
+    if (pat.startsWith("*.")) {
+      const suffix = pat.slice(1); // ".github.com"
+      return h.endsWith(suffix) && h.length > suffix.length;
+    }
+    // Allow glob-style host patterns too (e.g. "10.0.0.*").
+    return compileGlob(pat)(h);
+  });
+}
+
+/** Walk every string leaf in a value (objects/arrays included). */
+export function* stringLeaves(value: unknown): Generator<string> {
+  if (typeof value === "string") {
+    yield value;
+  } else if (Array.isArray(value)) {
+    for (const v of value) yield* stringLeaves(v);
+  } else if (value && typeof value === "object") {
+    for (const v of Object.values(value)) yield* stringLeaves(v);
+  }
+}
+
+/** Evaluate a single {@link ArgMatcher} against a value. */
+export function matchArg(value: unknown, matcher: ArgMatcher): boolean {
+  if (typeof matcher === "function") return matcher(value);
+
+  if ("exists" in matcher) {
+    return matcher.exists ? value !== undefined : value === undefined;
+  }
+  if ("equals" in matcher) {
+    return deepEqual(value, matcher.equals);
+  }
+  if ("oneOf" in matcher) {
+    return matcher.oneOf.some((v) => deepEqual(value, v));
+  }
+  if ("glob" in matcher) {
+    return typeof value === "string" && matchPath(value, matcher.glob);
+  }
+  if ("host" in matcher) {
+    if (typeof value !== "string") return false;
+    const host = extractHost(value);
+    return host !== undefined && matchHost(host, matcher.host);
+  }
+  if ("regex" in matcher) {
+    const re =
+      matcher.regex instanceof RegExp ? matcher.regex : new RegExp(matcher.regex);
+    return typeof value === "string" && re.test(value);
+  }
+  if ("contains" in matcher) {
+    return typeof value === "string" && value.includes(matcher.contains);
+  }
+  return false;
+}
+
+/** True if *any* string leaf in the call's args matches the path glob. */
+export function callMatchesPath(call: ToolCall, pattern: string | string[]): boolean {
+  for (const leaf of stringLeaves(call.args)) {
+    if (matchPath(leaf, pattern)) return true;
+  }
+  return false;
+}
+
+/** True if *any* URL-ish string leaf in the call's args matches the host. */
+export function callMatchesHost(call: ToolCall, pattern: string | string[]): boolean {
+  for (const leaf of stringLeaves(call.args)) {
+    const host = extractHost(leaf);
+    if (host !== undefined && matchHost(host, pattern)) return true;
+  }
+  return false;
+}
+
+/** Minimal structural equality for the `equals`/`oneOf` matchers. */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== typeof b) return false;
+  if (a && b && typeof a === "object") {
+    if (Array.isArray(a) !== Array.isArray(b)) return false;
+    const ak = Object.keys(a as object);
+    const bk = Object.keys(b as object);
+    if (ak.length !== bk.length) return false;
+    return ak.every((k) =>
+      deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]),
+    );
+  }
+  return false;
+}

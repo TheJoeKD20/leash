@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+
+# Trace artifacts produced by examples / tests
+*.leash.jsonl
+examples/*.jsonl
+/tmp-traces/
+
+.DS_Store
+.idea/
+.vscode/
+.env
+.env.*

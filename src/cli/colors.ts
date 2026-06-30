@@ -2,32 +2,27 @@
  * Tiny zero-dependency ANSI colour helper. Honours `NO_COLOR` and non-TTY
  * output so piped/redirected traces stay clean.
  */
-const ENABLED =
-  !process.env.NO_COLOR &&
-  process.env.TERM !== "dumb" &&
-  (process.stdout.isTTY ?? false);
-
-function wrap(open: number, close: number) {
-  return (s: string): string => (ENABLED ? `[${open}m${s}[${close}m` : s);
+export interface Palette {
+  enabled: boolean;
+  bold: (s: string) => string;
+  dim: (s: string) => string;
+  red: (s: string) => string;
+  green: (s: string) => string;
+  yellow: (s: string) => string;
+  blue: (s: string) => string;
+  magenta: (s: string) => string;
+  cyan: (s: string) => string;
+  gray: (s: string) => string;
 }
 
-export const colors = {
-  enabled: ENABLED,
-  bold: wrap(1, 22),
-  dim: wrap(2, 22),
-  red: wrap(31, 39),
-  green: wrap(32, 39),
-  yellow: wrap(33, 39),
-  blue: wrap(34, 39),
-  magenta: wrap(35, 39),
-  cyan: wrap(36, 39),
-  gray: wrap(90, 39),
-};
+const ESC = String.fromCharCode(27); // ANSI escape; avoids a literal control char in source
 
-/** Force colours on/off regardless of environment (used by the CLI flag). */
-export function makeColors(enabled: boolean): typeof colors {
-  const w = (open: number, close: number) => (s: string) =>
-    enabled ? `[${open}m${s}[${close}m` : s;
+/** Build a palette whose colours are on or off as given. */
+export function makeColors(enabled: boolean): Palette {
+  const w =
+    (open: number, close: number) =>
+    (s: string): string =>
+      enabled ? `${ESC}[${open}m${s}${ESC}[${close}m` : s;
   return {
     enabled,
     bold: w(1, 22),
@@ -41,3 +36,12 @@ export function makeColors(enabled: boolean): typeof colors {
     gray: w(90, 39),
   };
 }
+
+/** Whether ANSI colour should be enabled for the current process by default. */
+export const colorEnabled =
+  !process.env.NO_COLOR &&
+  process.env.TERM !== "dumb" &&
+  (process.stdout.isTTY ?? false);
+
+/** The default, environment-aware palette used by the CLI. */
+export const colors: Palette = makeColors(colorEnabled);

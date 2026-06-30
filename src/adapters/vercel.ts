@@ -21,6 +21,7 @@
  * ```
  */
 import type { Leash } from "../leash.js";
+import { toArgsRecord } from "./generic.js";
 
 /** Minimal structural type for a Vercel AI SDK tool. */
 export interface VercelTool {
@@ -54,13 +55,7 @@ export function wrapVercelTool(leash: Leash, name: string, def: VercelTool): Ver
   if (typeof original !== "function") return def;
 
   const execute = (input: unknown, options?: unknown) =>
-    leash.guard({ tool: name, args: asArgs(input) }, () => original(input, options));
+    leash.guard({ tool: name, args: toArgsRecord(input) }, () => original(input, options));
 
   return { ...def, execute };
-}
-
-function asArgs(input: unknown): Record<string, unknown> {
-  return input && typeof input === "object" && !Array.isArray(input)
-    ? (input as Record<string, unknown>)
-    : { value: input };
 }

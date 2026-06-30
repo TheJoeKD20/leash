@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/logo.svg" alt="Leash" width="360" />
+<img src="https://raw.githubusercontent.com/TheJoeKD20/leash/main/assets/logo.svg" alt="Leash" width="360" />
 
 # Leash
 
@@ -21,7 +21,7 @@
 
 <br/>
 
-<img src="./assets/hero.svg" alt="leash view rendering an execution trace: an allowed read, two policy-blocked calls, and a loop hard-stop" width="820" />
+<img src="https://raw.githubusercontent.com/TheJoeKD20/leash/main/assets/hero.svg" alt="leash view rendering an execution trace: an allowed read, two policy-blocked calls, and a loop hard-stop" width="820" />
 
 <sub>👆 The whole story in one screen. <code>npx tsx examples/runaway-agent.ts &amp;&amp; leash view examples/runaway.jsonl</code> — runs in 30 seconds, no API key, no account, nothing to sign up for.</sub>
 
@@ -65,7 +65,7 @@ Leash is the **safety membrane that slots underneath the framework you already u
 - **🛑 A real kill-switch.** Built-in loop/anomaly detection halts a runaway agent the moment it starts repeating itself, and the halt is terminal — every later call is refused too.
 - **✋ Human-in-the-loop approvals.** Flag sensitive calls as `ask` and pause for a human; approve or reject with a reason that flows straight into the trace.
 - **🔍 Replayable forensic traces.** Every call — allowed, blocked, or halted — is appended to a JSONL trace, secrets redacted, flushed per-event so it survives a hard kill. Render it with `leash view`.
-- **🧯 The trace is never the leak.** Sensitive argument keys (`apiKey`, `password`, `token`, …) are redacted before anything touches disk; long values are truncated.
+- **🧯 The trace tries not to be the leak.** Sensitive keys (`apiKey`, `password`, `token`, `bearer`, …) in both arguments and structured results are redacted before anything touches disk, and long values are truncated. For tools whose raw output may itself be a secret (file contents, HTTP bodies), set `trace.captureResults: false` to keep result bodies out of the trace entirely.
 - **📦 Tiny and dependency-light.** One runtime dependency (`picomatch`). Ships ESM + CJS + types. Strict TypeScript throughout.
 
 ---
@@ -248,6 +248,22 @@ const leash = createLeash(); // == safeDefaults(), deny-by-default
 ```
 
 </details>
+
+> **🎯 Scoping `path`/`host` for allow rules.** The top-level `path` and `host`
+> sugar matches if **any** string argument looks like a matching path/URL. That's
+> fail-safe for `deny` rules, but for an `allow` rule it can be too generous — a
+> stray field containing an allowed host would let an otherwise-denied call
+> through. For precise allowlists, match the **specific** field with an `args`
+> matcher instead:
+>
+> ```ts
+> // Precise: only the `url` argument is checked.
+> allow("http.fetch", { args: { url: { host: "*.github.com" } } });
+> ```
+>
+> Reads under `safeDefaults()` are additionally guarded: absolute paths
+> (`/etc/passwd`), `~` home paths, and `..` traversal are denied, and paths are
+> lexically normalized first so `src/../../etc/passwd` can't dodge a rule.
 
 <details>
 <summary><b>Argument matchers</b></summary>

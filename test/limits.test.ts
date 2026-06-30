@@ -28,12 +28,13 @@ describe("LimitTracker", () => {
     expect(() => t.checkBeforeCall(call)).toThrow(/Wall-clock budget/);
   });
 
-  it("enforces token budget once reported", () => {
+  it("enforces token budget eagerly on report", () => {
     const t = new LimitTracker({ maxTokens: 100 });
     const call = { tool: "x", args: {} };
     t.checkBeforeCall(call);
-    t.reportTokens(150);
-    expect(() => t.checkBeforeCall(call)).toThrow(/Token budget/);
+    // reportTokens enforces immediately, so generation burn is caught without
+    // needing a further tool call.
+    expect(() => t.reportTokens(150)).toThrow(/Token budget/);
   });
 
   it("enforces per-tool caps", () => {
@@ -44,20 +45,31 @@ describe("LimitTracker", () => {
     expect(() => t.checkBeforeCall(call)).toThrow(/Per-tool budget/);
   });
 
-  it("detects loops via maxRepeatedCalls", () => {
+  it("detects loops via maxRepeatedCalls (only on executed calls)", () => {
     const t = new LimitTracker({ maxRepeatedCalls: 2 });
     const call = { tool: "search", args: { q: "same" } };
-    t.checkBeforeCall(call); // 1
-    t.checkBeforeCall(call); // 2
-    expect(() => t.checkBeforeCall(call)).toThrow(/Loop detected/); // 3 > 2
+    t.checkRepeat(call); // 1
+    t.checkRepeat(call); // 2
+    expect(() => t.checkRepeat(call)).toThrow(/Loop detected/); // 3 > 2
   });
 
   it("loop detection is argument-order insensitive", () => {
     const t = new LimitTracker({ maxRepeatedCalls: 1 });
-    t.checkBeforeCall({ tool: "x", args: { a: 1, b: 2 } });
+    t.checkRepeat({ tool: "x", args: { a: 1, b: 2 } });
     expect(() =>
-      t.checkBeforeCall({ tool: "x", args: { b: 2, a: 1 } }),
+      t.checkRepeat({ tool: "x", args: { b: 2, a: 1 } }),
     ).toThrow(/Loop detected/);
+  });
+
+  it("checkBeforeCall does not perform loop detection", () => {
+    const t = new LimitTracker({ maxRepeatedCalls: 1 });
+    const call = { tool: "x", args: { a: 1 } };
+    // Repeated pre-checks (e.g. for calls policy will deny) never trip the loop.
+    expect(() => {
+      t.checkBeforeCall(call);
+      t.checkBeforeCall(call);
+      t.checkBeforeCall(call);
+    }).not.toThrow();
   });
 
   it("reports usage stats", () => {

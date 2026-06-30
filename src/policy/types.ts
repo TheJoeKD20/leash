@@ -54,11 +54,20 @@ export interface Rule {
   /**
    * Ergonomic sugar: match a path-like glob against *any* string argument
    * value (recursively). Handy for `fs.*` tools without naming the field.
+   *
+   * Note: because it matches *any* leaf, this is fail-safe for `deny` rules but
+   * can be too permissive for `allow` rules — scope an allowlist to a specific
+   * field with `args: { path: { glob: "src/**" } }` instead. Values are
+   * lexically normalized (`.`/`..` resolved) before matching.
    */
   path?: string | string[];
   /**
    * Ergonomic sugar: match a URL host against *any* string argument value
    * that parses as a URL (recursively). Handy for network tools.
+   *
+   * Note: as with {@link path}, this matches *any* leaf — prefer
+   * `args: { url: { host: "*.github.com" } }` for precise allowlists so an
+   * unrelated field can't widen an `allow` rule.
    */
   host?: string | string[];
   /** Fully custom predicate over the whole call. ANDed with the above. */

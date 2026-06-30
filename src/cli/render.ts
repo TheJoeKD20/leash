@@ -30,7 +30,7 @@ export function renderTrace(events: TraceEvent[], opts: RenderOptions = {}): str
   // Header.
   lines.push(c.bold(`leash trace · ${s.runId ?? "unknown run"}`));
   if (s.policySummary) {
-    lines.push(c.dim(`policy: ${s.policyName ? "" : ""}${s.policySummary}`));
+    lines.push(c.dim(`policy: ${s.policySummary}`));
   }
   lines.push("");
 

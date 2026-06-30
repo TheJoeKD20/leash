@@ -115,6 +115,21 @@ describe("wrapAnthropicTools", () => {
     expect(result.content).toMatch(/Unknown tool/);
   });
 
+  it("dispatchAll stops dispatching once a hard-stop halts the run", async () => {
+    const leash = createLeash({
+      policy: { rules: [allow("*")], limits: { maxToolCalls: 1 } },
+    });
+    const kit = wrapAnthropicTools(leash, tools);
+    const results = await kit.dispatchAll([
+      { type: "tool_use", id: "a", name: "fs.read", input: { path: "1" } },
+      { type: "tool_use", id: "b", name: "fs.read", input: { path: "2" } }, // trips cap → halt
+      { type: "tool_use", id: "c", name: "fs.read", input: { path: "3" } }, // never dispatched
+    ]);
+    expect(results).toHaveLength(2);
+    expect(results[1]!.is_error).toBe(true);
+    expect(leash.isHalted).toBe(true);
+  });
+
   it("dispatchAll filters tool_use blocks from mixed content", async () => {
     const leash = createLeash({ policy: { rules: [allow("*")] } });
     const kit = wrapAnthropicTools(leash, tools);

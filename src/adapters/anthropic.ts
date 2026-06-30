@@ -114,6 +114,9 @@ export function wrapAnthropicTools(leash: Leash, tools: AnthropicTool[]): Leashe
     const results: ToolResultBlock[] = [];
     for (const block of blocks) {
       results.push(await dispatch(block));
+      // Once a hard-stop fires, stop dispatching the rest of this turn rather
+      // than emitting an identical limit error for every remaining block.
+      if (leash.isHalted) break;
     }
     return results;
   };

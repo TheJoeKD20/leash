@@ -8,7 +8,7 @@ export type RedactPredicate = (key: string, value: unknown) => boolean;
 
 /** Keys whose values are redacted by default. */
 export const DEFAULT_REDACT =
-  /(^|[_\-.])(secret|token|password|passwd|api[_-]?key|apikey|access[_-]?key|authorization|auth|cookie|session|private[_-]?key|credential)s?($|[_\-.])/i;
+  /(^|[_\-.])(secret|token|password|passwd|passphrase|pwd|api[_-]?key|apikey|access[_-]?key|authorization|auth|bearer|jwt|cookie|session|private[_-]?key|credential)s?($|[_\-.])/i;
 
 const REDACTED = "[redacted]";
 
@@ -74,6 +74,8 @@ export function preview(value: unknown, maxLen = 512): string {
 }
 
 function truncate(s: string, maxLen: number): string {
-  if (s.length <= maxLen) return s;
+  // A non-positive limit disables truncation rather than collapsing every
+  // value to a bare marker (the surprising reading of `maxStringLength: 0`).
+  if (maxLen <= 0 || s.length <= maxLen) return s;
   return `${s.slice(0, maxLen)}…[+${s.length - maxLen} chars]`;
 }

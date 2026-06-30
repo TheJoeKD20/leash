@@ -27,6 +27,7 @@ export {
   safeDefaults,
   denyNetworkPolicy,
   readOnlyFsPolicy,
+  isDestructiveShellCommand,
 } from "./policy/defaults.js";
 export {
   matchName,
@@ -34,6 +35,7 @@ export {
   matchHost,
   matchArg,
   extractHost,
+  normalizePath,
 } from "./policy/matchers.js";
 export type {
   Policy,
@@ -70,7 +72,7 @@ export {
 } from "./errors.js";
 
 // ── Adapters ────────────────────────────────────────────────────────────────
-export { wrapTools, wrapToolFn, type ToolFn } from "./adapters/generic.js";
+export { wrapTools, wrapToolFn, toArgsRecord, type ToolFn } from "./adapters/generic.js";
 export {
   wrapVercelTools,
   wrapVercelTool,

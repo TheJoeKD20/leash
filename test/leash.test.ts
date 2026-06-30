@@ -121,11 +121,14 @@ describe("Leash.guard", () => {
     }
   });
 
-  it("reports tokens toward the budget", async () => {
+  it("enforces the token budget eagerly on reportTokens and halts", async () => {
     const leash = createLeash({
       policy: { rules: [allow("*")], limits: { maxTokens: 100 } },
     });
-    leash.reportTokens(200);
+    // Over-budget report throws immediately (no further tool call needed) and
+    // permanently halts the run.
+    expect(() => leash.reportTokens(200)).toThrow(LimitExceededError);
+    expect(leash.isHalted).toBe(true);
     await expect(leash.guard({ tool: "x", args: {} }, () => 1)).rejects.toBeInstanceOf(
       LimitExceededError,
     );

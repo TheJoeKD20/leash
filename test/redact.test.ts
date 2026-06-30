@@ -31,6 +31,37 @@ describe("sanitize", () => {
     expect(out.self).toBe("[circular]");
   });
 
+  it("redacts common agent credential keys", () => {
+    const out = sanitizeArgs({
+      bearer: "abc",
+      jwt: "ey.x.y",
+      passphrase: "p",
+      pwd: "p2",
+      "x-api-key": "k",
+      Authorization: "Bearer z",
+      refresh_token: "r",
+      client_secret: "c",
+      keep: "ok",
+    });
+    for (const k of [
+      "bearer",
+      "jwt",
+      "passphrase",
+      "pwd",
+      "x-api-key",
+      "Authorization",
+      "refresh_token",
+      "client_secret",
+    ]) {
+      expect(out[k]).toBe("[redacted]");
+    }
+    expect(out.keep).toBe("ok");
+  });
+
+  it("treats maxStringLength <= 0 as no truncation", () => {
+    expect(sanitize("hello", { maxStringLength: 0 })).toBe("hello");
+  });
+
   it("supports a custom predicate", () => {
     const out = sanitizeArgs(
       { keepThis: "x", dropThis: "y" },

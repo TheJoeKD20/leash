@@ -6,9 +6,9 @@
  */
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Decision, Effect } from "../policy/types.js";
+import type { Effect } from "../policy/types.js";
 import type { UsageStats } from "../enforcement/limits.js";
-import { preview, sanitizeArgs, type RedactOptions } from "./redact.js";
+import { preview, sanitize, sanitizeArgs, type RedactOptions } from "./redact.js";
 import type {
   CallEvent,
   CallOutcome,
@@ -23,12 +23,21 @@ export interface TracerOptions extends RedactOptions {
   sink?: (event: TraceEvent) => void;
   /** Keep events in memory for in-process inspection. Default `false`. */
   retain?: boolean;
+  /**
+   * Record a redacted+truncated preview of each allowed call's result. Default
+   * `true`. Set `false` if tool outputs may carry secrets that key-based
+   * redaction can't catch (e.g. a file's raw contents), so nothing of the
+   * result body reaches the trace.
+   */
+  captureResults?: boolean;
   /** Injectable clock for deterministic tests. */
   now?: () => number;
 }
 
 /** Fields the guard supplies when recording a completed call. */
 export interface RecordCallInput {
+  /** Sequence number for this call, owned by the caller (the leash). */
+  seq: number;
   tool: string;
   args: Record<string, unknown>;
   decision: Effect;
@@ -41,7 +50,6 @@ export interface RecordCallInput {
 }
 
 export class Tracer {
-  private seq = 0;
   private readonly events: TraceEvent[] = [];
   private readonly now: () => number;
   private fileReady = false;
@@ -72,7 +80,7 @@ export class Tracer {
       type: "call",
       ts: this.now(),
       runId: this.opts.runId,
-      seq: ++this.seq,
+      seq: input.seq,
       tool: input.tool,
       args: sanitizeArgs(input.args, this.opts),
       decision: input.decision,
@@ -80,8 +88,12 @@ export class Tracer {
       reason: input.reason,
       ...(input.rule ? { rule: input.rule } : {}),
       ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
-      ...(input.outcome === "allowed" && input.result !== undefined
-        ? { resultPreview: preview(input.result, this.opts.maxStringLength) }
+      ...(this.opts.captureResults !== false &&
+      input.outcome === "allowed" &&
+      input.result !== undefined
+        ? // Redact sensitive keys in structured results and truncate, so a
+          // tool returning an object full of secrets doesn't leak into the trace.
+          { resultPreview: preview(sanitize(input.result, this.opts), this.opts.maxStringLength) }
         : {}),
       ...(input.error ? { error: input.error } : {}),
     };
@@ -129,9 +141,4 @@ export class Tracer {
       // Tracing is best-effort; never let it crash the agent.
     }
   }
-}
-
-/** Build the one-line policy summary stored at run start. */
-export function summarizePolicyDecision(decision: Decision): string {
-  return decision.reason;
 }

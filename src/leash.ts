@@ -58,6 +58,12 @@ export interface TraceOptions extends RedactOptions {
   sink?: (event: TraceEvent) => void;
   /** Retain events in memory (queryable via {@link Leash.events}). */
   retain?: boolean;
+  /**
+   * Record a redacted+truncated preview of each allowed call's result.
+   * Default `true`; set `false` when tool outputs may carry raw secrets that
+   * key-based redaction can't catch (e.g. file contents).
+   */
+  captureResults?: boolean;
 }
 
 /** What a `block`-mode guard returns instead of a tool result. */
@@ -122,6 +128,7 @@ export class Leash {
     // Once halted, every subsequent call is refused immediately.
     if (this.halted) {
       this.tracer.recordCall({
+        seq,
         tool: call.tool,
         args: call.args,
         decision: "deny",
@@ -131,35 +138,22 @@ export class Leash {
       throw this.halted.error;
     }
 
-    // 1. Resource limits / loop detection — the kill-switch. Always throws.
-    try {
-      this.limits.checkBeforeCall(call);
-    } catch (e) {
-      if (e instanceof LimitExceededError) {
-        this.tracer.recordCall({
-          tool: call.tool,
-          args: call.args,
-          decision: "deny",
-          outcome: "limited",
-          reason: e.message,
-        });
-        this.halt(e);
-        throw e;
-      }
-      throw e;
-    }
+    // 1. Pre-call resource limits (wall-clock, token, count caps) — the
+    //    kill-switch. Always throws and permanently halts.
+    this.enforceLimit(seq, call, () => this.limits.checkBeforeCall(call));
 
     // 2. Policy evaluation.
     const decision = evaluate(this.policy, call);
 
     if (decision.effect === "deny") {
-      return this.block(call, new PolicyViolationError(call, decision), "denied", decision);
+      return this.block(seq, call, new PolicyViolationError(call, decision), "denied", decision);
     }
 
     if (decision.effect === "ask") {
       const approved = await this.requestApproval(call, decision, seq);
       if (!approved.approved) {
         return this.block(
+          seq,
           call,
           new ApprovalRejectedError(call, decision, approved.reason),
           "rejected",
@@ -168,12 +162,17 @@ export class Leash {
       }
     }
 
-    // 3. Allowed (or approved): execute with timing, record outcome.
+    // 3. Loop / runaway detection runs only now that the call is going to
+    //    execute, so a stream of policy-denied calls can't trip the hard-stop.
+    this.enforceLimit(seq, call, () => this.limits.checkRepeat(call));
+
+    // 4. Allowed (or approved): execute with timing, record outcome.
     this.limits.recordCall(call);
     const startedAt = this.now();
     try {
       const result = await exec();
       this.tracer.recordCall({
+        seq,
         tool: call.tool,
         args: call.args,
         decision: decision.effect,
@@ -186,6 +185,7 @@ export class Leash {
       return result;
     } catch (err) {
       this.tracer.recordCall({
+        seq,
         tool: call.tool,
         args: call.args,
         decision: decision.effect,
@@ -199,9 +199,44 @@ export class Leash {
     }
   }
 
-  /** Add to the run's token budget tally. */
+  /**
+   * Run a limit check; on {@link LimitExceededError} record a `limited` trace
+   * event, permanently halt the leash, and rethrow (the kill-switch always
+   * throws, regardless of violation mode).
+   */
+  private enforceLimit(seq: number, call: ToolCall, check: () => void): void {
+    try {
+      check();
+    } catch (e) {
+      if (e instanceof LimitExceededError) {
+        this.tracer.recordCall({
+          seq,
+          tool: call.tool,
+          args: call.args,
+          decision: "deny",
+          outcome: "limited",
+          reason: e.message,
+        });
+        this.halt(e);
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * Add to the run's token budget tally. Enforces the token cap eagerly: if
+   * the reported total now exceeds `maxTokens`, the leash hard-stops and this
+   * throws {@link LimitExceededError} — so runaway generation is caught even
+   * without a further tool call.
+   */
   reportTokens(tokens: number): void {
-    this.limits.reportTokens(tokens);
+    if (this.halted) throw this.halted.error;
+    try {
+      this.limits.reportTokens(tokens);
+    } catch (e) {
+      if (e instanceof LimitExceededError) this.halt(e);
+      throw e;
+    }
   }
 
   /** Current usage snapshot. */
@@ -259,12 +294,14 @@ export class Leash {
   }
 
   private block(
+    seq: number,
     call: ToolCall,
     error: LeashError,
     outcome: CallOutcome,
     decision: Decision,
   ): BlockedResult {
     this.tracer.recordCall({
+      seq,
       tool: call.tool,
       args: call.args,
       decision: "deny",

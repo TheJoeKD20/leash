@@ -25,10 +25,16 @@ export function wrapToolFn<A, R>(
   fn: ToolFn<A, R>,
 ): ToolFn<A, R> {
   return ((args: A) =>
-    leash.guard({ tool: name, args: asRecord(args) }, () => fn(args))) as ToolFn<A, R>;
+    leash.guard({ tool: name, args: toArgsRecord(args) }, () => fn(args))) as ToolFn<A, R>;
 }
 
-function asRecord(args: unknown): Record<string, unknown> {
+/**
+ * Coerce a tool's input into the `Record<string, unknown>` shape the policy
+ * engine and tracer expect. Object inputs pass through; a primitive or array
+ * input is wrapped as `{ value }` so arg-based matchers still have something to
+ * match. Shared by every adapter so they normalize identically.
+ */
+export function toArgsRecord(args: unknown): Record<string, unknown> {
   return args && typeof args === "object" && !Array.isArray(args)
     ? (args as Record<string, unknown>)
     : { value: args };
